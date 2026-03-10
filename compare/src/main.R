@@ -44,7 +44,7 @@ using_study_data <- function() {
         data = df,
     )
     print("Done.")
-    print(res)
+    print(summary(res))
 
 }
 

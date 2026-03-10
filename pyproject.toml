@@ -1,0 +1,11 @@
+[project]
+name = "fastfs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "polars>=1.38.1",
+    "polars-readstat>=0.14.4",
+    "sortedcontainers>=2.4.0",
+]
