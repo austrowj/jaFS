@@ -37,7 +37,7 @@ using_study_data <- function() {
         outcomes = list(
             d = c("DEATH", "s", "ttdeath"),
             mi = c("MI", "s", "ttmi"),
-            bmi = c("bmicat", "c", "<"),
+            #bmi = c("bmicat", "c", "<"),
             stroke = c("STROKE", "s", "ttstroke")
         ),
         fu = "censor",
