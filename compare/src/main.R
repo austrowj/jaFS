@@ -4,6 +4,8 @@ using_study_data <- function() {
     dotenv::load_dot_env(file.path(getwd(), ".env"))
     data_root <- Sys.getenv("DATA_ROOT")
 
+    print("Loading data...")
+
     df <- (
         haven::read_sas(file.path(data_root, "ad_hx.sas7bdat"))
         |> dplyr::mutate(trt = dplyr::if_else(RXGRP == 1, "Active", "Placebo"))
@@ -12,12 +14,13 @@ using_study_data <- function() {
 
         |> dplyr::right_join(
             haven::read_sas(file.path(data_root, "ad_safety.sas7bdat"))
+            #|> dplyr::slice(21:30)
             |> dplyr::filter(SAFEFLG == 1)
+            |> dplyr::mutate(censor = TTDEATH)
             |> dplyr::mutate(
-                censor = TTDEATH,
-                ttdeath = DEATH * TTDEATH,
-                ttmi = NFMI * TTNFMI,
-                ttstroke = NFSTROKE * TTNFSTROKE
+                ttdeath = TTDEATH,
+                ttmi = dplyr::if_else(NFMI == 1, TTNFMI, censor),
+                ttstroke = dplyr::if_else(NFSTROKE == 1, TTNFSTROKE, censor)
             )
             |> dplyr::select(USUBJID, censor, ttdeath, ttmi, ttstroke, DEATH, MI := NFMI, STROKE := NFSTROKE)
         )
@@ -30,22 +33,25 @@ using_study_data <- function() {
     print(df)
 
     print("Computing win ratio...")
+    start <- Sys.time()
     res <- WinRatio::winratio(
         id = "USUBJID",
         trt = "trt",
         active = "Active",
         outcomes = list(
-            d = c("DEATH", "s", "ttdeath"),
-            mi = c("MI", "s", "ttmi"),
-            #bmi = c("bmicat", "c", "<"),
-            stroke = c("STROKE", "s", "ttstroke")
+            d = c("DEATH", "s", "ttdeath")
+            ,mi = c("MI", "s", "ttmi")
+            #,bmi = c("bmicat", "c", "<")
+            ,stroke = c("STROKE", "s", "ttstroke")
         ),
         fu = "censor",
-        data = df,
+        data = df
     )
+    end <- Sys.time()
     print("Done.")
     print(summary(res))
 
+    print(paste0("Time: ", end - start, " seconds."))
 }
 
 using_test_survival_data <- function() {
