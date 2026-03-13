@@ -85,9 +85,9 @@ def win_ratio[T](
 
         # Insert the new event into the appropriate sorted list.
         scoreboards[active].add(current_score[usubjid])
-    
-    subject_wins = {id: 0 for id in current_score.keys()}
-    subject_losses = {id: 0 for id in current_score.keys()}
+
+    subject_data = {id: [0, 0, 0] for id in current_score.keys()} # wins, losses, last seen time
+    tree = FenwickTreeWithSortedLists(len(timeline))
     
     print(f'Number of subjects: {len(scoreboards[0]) + len(scoreboards[1])}')
     print(f'Number of subjects in \'Active\' group: {len(scoreboards[1])}')
@@ -101,12 +101,20 @@ def win_ratio[T](
         event: str = row['event']
         time_to: int = row['time_to']
 
+        tree_time = i + 1
+
         # Remove the current score from the scoreboard.
         scoreboards[active].remove(current_score[usubjid])
 
+        # First, check fenwick tree for updates since last seen time
+        new_wins, new_losses = tree.query(current_score[usubjid], subject_data[usubjid][2], tree_time)
+        subject_data[usubjid][0] += new_wins
+        subject_data[usubjid][1] += new_losses
+        subject_data[usubjid][2] = tree_time
+
         # Update the score vector based on the event type.
         if event != 'censor':
-            current_score[usubjid] = update_score[event](time_to, current_score[usubjid])
+            current_score[usubjid] = update_score[event](10000 - time_to, current_score[usubjid]) # later events are better
             scoreboards[active].add(current_score[usubjid])
 
         else:
@@ -126,11 +134,16 @@ def win_ratio[T](
             losses[active] += loss_count
 
             # Update subject-level wins
-            subject_wins[usubjid] += win_count
-            subject_losses[usubjid] += loss_count
+            subject_data[usubjid][0] += win_count
+            subject_data[usubjid][1] += loss_count
+
+            # Add to fenwick tree
+            tree.add(current_score[usubjid], tree_time)
     
     end = timeit.default_timer()
     print(f'Done.')
+
+    # Compute Z-score and confidence interval.
 
     # Print results.
     for i in range(2):

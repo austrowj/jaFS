@@ -1,4 +1,6 @@
 #pyright: basic
+from typing import Any
+
 from sortedcontainers import SortedList
 
 class FenwickTreeWithSortedLists:
@@ -7,9 +9,12 @@ class FenwickTreeWithSortedLists:
     """
 
     def __init__(self, max: int):
-        self.nodes: list[SortedList | None] = [None]*(max+1)
+        self.nodes: list[SortedList | None] = [None]*(max + 1)
+    
+    def __len__(self):
+        return len(self.nodes)
 
-    def add(self, x, t):
+    def add(self, x: Any, t: int):
         assert 0 < t < len(self.nodes)
 
         while t < len(self.nodes):
@@ -21,12 +26,12 @@ class FenwickTreeWithSortedLists:
             node.add(x)
             t += t&-t
     
-    def query(self, x, t_lb, t_ub):
+    def query(self, x: Any, t_lb: int, t_ub: int):
         a = self._query_single(x, t_ub)
         b = self._query_single(x, t_lb)
         return a[0]-b[0], a[1]-b[1]
 
-    def _query_single(self, x, t):
+    def _query_single(self, x: Any, t: int):
         total_a, total_b = 0, 0
         while t > 0:
             node: SortedList | None = self.nodes[t] # pyright: ignore (need stub file to prevent complaints here)
