@@ -1,9 +1,13 @@
 #pyright: basic
+from typing import Any, TypeVar, Callable
+
+from sortedcontainers import SortedList
 
 import polars as pl
 from polars_readstat import ScanReadstat, scan_readstat
 
 import env
+from data_structures import FenwickTreeWithSortedLists
 
 def main():
     print('Loading data...')
@@ -46,13 +50,25 @@ def main():
     )
     df = df.collect()
     print(df)
-
+    
     print('Computing win ratio...')
-    win_ratio(df)
+    win_ratio(
+        df,
+        lambda: (0, 0, 0),
+        {
+            'death':  lambda value, old: (value, old[1], old[2]),
+            'mi':     lambda value, old: (old[0], value, old[2]),
+            'stroke': lambda value, old: (old[0], old[1], value),
+        }
+    )
 
-def win_ratio(timeline: pl.DataFrame) -> None:
+T = TypeVar('T')
+def win_ratio[T](
+        timeline: pl.DataFrame,
+        default_score: Callable[[], T],
+        update_score: dict[str, Callable[[Any, T], T]]
+) -> None:
     """Calculate the win ratio for the given timeline of events."""
-    from sortedcontainers import SortedList
     import timeit
 
     start = timeit.default_timer()
@@ -62,13 +78,16 @@ def win_ratio(timeline: pl.DataFrame) -> None:
     scoreboards = [SortedList(), SortedList()] # One for each treatment group.
     wins, losses, ties = [0, 0], [0, 0], [0, 0] # For active group (number 1)
 
-    for row in timeline.filter(pl.col('event') == pl.lit('censor')).iter_rows(named = True):
+    for row in timeline.unique('USUBJID', keep = 'last').iter_rows(named = True):
         usubjid = row['USUBJID']
         active: int = row['active']
-        current_score[usubjid] = (0, 0, 0) # No events recorded
+        current_score[usubjid] = default_score()
 
         # Insert the new event into the appropriate sorted list.
         scoreboards[active].add(current_score[usubjid])
+    
+    subject_wins = {id: 0 for id in current_score.keys()}
+    subject_losses = {id: 0 for id in current_score.keys()}
     
     print(f'Number of subjects: {len(scoreboards[0]) + len(scoreboards[1])}')
     print(f'Number of subjects in \'Active\' group: {len(scoreboards[1])}')
@@ -86,30 +105,29 @@ def win_ratio(timeline: pl.DataFrame) -> None:
         scoreboards[active].remove(current_score[usubjid])
 
         # Update the score vector based on the event type.
-        if event == 'death':
-            current_score[usubjid] = (time_to, current_score[usubjid][1], current_score[usubjid][2])
-        elif event == 'mi':
-            current_score[usubjid] = (current_score[usubjid][0], time_to, current_score[usubjid][2])
-        elif event == 'stroke':
-            current_score[usubjid] = (current_score[usubjid][0], current_score[usubjid][1], time_to)
+        if event != 'censor':
+            current_score[usubjid] = update_score[event](time_to, current_score[usubjid])
+            scoreboards[active].add(current_score[usubjid])
 
-        elif event == 'censor':
+        else:
             # Do not re-add the subject. Instead, find their position in the opposite scoreboard and report that as number of wins.
             r_index = scoreboards[1 - active].bisect_right(current_score[usubjid])
             l_index = scoreboards[1 - active].bisect_left(current_score[usubjid])
+
             # The number of wins for this subject is the number of subjects in the opposite group
             # that have a lower score vector.
-            losses[active] += l_index
-            wins[active] += len(scoreboards[1 - active]) - r_index
-            ties[active] += r_index - l_index
+            win_count = len(scoreboards[1 - active]) - r_index
+            tie_count = r_index - l_index
+            loss_count = l_index
 
-            continue # Do not re-add the subject to the scoreboard.
+            # Update treatment-level wins and losses (and ties)
+            wins[active] += win_count
+            ties[active] += tie_count
+            losses[active] += loss_count
 
-        else:
-            raise ValueError(f'Unrecognized event type "{event}".')
-
-        # Re-insert the updated score into the scoreboard.
-        scoreboards[active].add(current_score[usubjid])
+            # Update subject-level wins
+            subject_wins[usubjid] += win_count
+            subject_losses[usubjid] += loss_count
     
     end = timeit.default_timer()
     print(f'Done.')
@@ -119,8 +137,7 @@ def win_ratio(timeline: pl.DataFrame) -> None:
         print(f'{['Placebo', ' Active'][i]}: {wins[i]} wins, {losses[i]} losses, {ties[i]} ties, {wins[i] + losses[i] + ties[i]} total.')
 
     print(f'Total for Active: {wins[1] + losses[0]} wins, {wins[0] + losses[1]} losses, {sum(ties)} ties, {sum(wins) + sum(losses) + sum(ties)} total.')
-    print(f'Time: {end - start} seconds.')
-        
+    print(f'Time: {end - start} seconds.')      
 
 if __name__ == '__main__':
     main()
