@@ -26,12 +26,14 @@ class FenwickTreeWithSortedLists:
             node.add(x)
             t += t&-t
     
-    def query(self, x: Any, t_lb: int, t_ub: int):
-        a = self._query_single(x, t_ub)
-        b = self._query_single(x, t_lb)
+    def query_range(self, x: Any, t_lb: int, t_ub: int):
+        """Returns the number of elements less than x and the number of elements greater than x in the nodes between t_lb and t_ub."""
+        a = self.query(x, t_ub)
+        b = self.query(x, t_lb)
         return a[0]-b[0], a[1]-b[1]
 
-    def _query_single(self, x: Any, t: int):
+    def query(self, x: Any, t: int):
+        """Returns the number of elements less than x and the number of elements greater than x in the first t nodes."""
         total_a, total_b = 0, 0
         while t > 0:
             node: SortedList | None = self.nodes[t] # pyright: ignore (need stub file to prevent complaints here)

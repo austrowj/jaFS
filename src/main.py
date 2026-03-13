@@ -1,4 +1,5 @@
 #pyright: basic
+from math import inf, log, sqrt
 from typing import Any, TypeVar, Callable
 
 from sortedcontainers import SortedList
@@ -76,23 +77,32 @@ def win_ratio[T](
     # Start by inserting the initial lexicographical comparison vector for each subject.
     current_score = {} # Map from USUBJID to current score vector.
     scoreboards = [SortedList(), SortedList()] # One for each treatment group.
-    wins, losses, ties = [0, 0], [0, 0], [0, 0] # For active group (number 1)
+    favor_active, favor_placebo, favor_neither = 0, 0, 0
+
+    trt: list[list[str]] = [list(), list()]
 
     for row in timeline.unique('USUBJID', keep = 'last').iter_rows(named = True):
         usubjid = row['USUBJID']
         active: int = row['active']
         current_score[usubjid] = default_score()
 
+        trt[active].append(usubjid)
+
         # Insert the new event into the appropriate sorted list.
         scoreboards[active].add(current_score[usubjid])
 
     subject_data = {id: [0, 0, 0] for id in current_score.keys()} # wins, losses, last seen time
-    tree = FenwickTreeWithSortedLists(len(timeline))
+    trees = [FenwickTreeWithSortedLists(len(timeline)), FenwickTreeWithSortedLists(len(timeline))]
+
+    # Save basic summary stats
+    n_active = len(scoreboards[1])
+    n_placebo = len(scoreboards[0])
+    n = n_active + n_placebo
     
-    print(f'Number of subjects: {len(scoreboards[0]) + len(scoreboards[1])}')
-    print(f'Number of subjects in \'Active\' group: {len(scoreboards[1])}')
-    print(f'Number of subjects in \'Placebo\' group: {len(scoreboards[0])}')
-    print(f'Number of paired comparisons: {len(scoreboards[0]) * len(scoreboards[1])}')
+    print(f'Number of subjects: {n}')
+    print(f'Number of subjects in \'Active\' group: {n_active}')
+    print(f'Number of subjects in \'Placebo\' group: {n_placebo}')
+    print(f'Number of paired comparisons: {n_active * n_placebo}')
 
     # Process entire timeline of events in order.
     for i, row in enumerate(timeline.iter_rows(named = True)):
@@ -101,15 +111,15 @@ def win_ratio[T](
         event: str = row['event']
         time_to: int = row['time_to']
 
-        tree_time = i + 1
+        tree_time = i + 1 # Fenwick trees are 1-indexed.
 
         # Remove the current score from the scoreboard.
         scoreboards[active].remove(current_score[usubjid])
 
-        # First, check fenwick tree for updates since last seen time
-        new_wins, new_losses = tree.query(current_score[usubjid], subject_data[usubjid][2], tree_time)
-        subject_data[usubjid][0] += new_wins
-        subject_data[usubjid][1] += new_losses
+        # First, check fenwick tree of other treatment group for updates since last seen time.
+        update_losses, update_wins = trees[1-active].query_range(current_score[usubjid], subject_data[usubjid][2], tree_time)
+        subject_data[usubjid][0] += update_wins
+        subject_data[usubjid][1] += update_losses
         subject_data[usubjid][2] = tree_time
 
         # Update the score vector based on the event type.
@@ -129,28 +139,62 @@ def win_ratio[T](
             loss_count = l_index
 
             # Update treatment-level wins and losses (and ties)
-            wins[active] += win_count
-            ties[active] += tie_count
-            losses[active] += loss_count
+            favor_neither += tie_count
+            if (active):
+                favor_active += win_count
+                favor_placebo += loss_count
+            else:
+                favor_active += loss_count
+                favor_placebo += win_count
 
-            # Update subject-level wins
+            # Update subject-level Uw
             subject_data[usubjid][0] += win_count
             subject_data[usubjid][1] += loss_count
 
-            # Add to fenwick tree
-            tree.add(current_score[usubjid], tree_time)
+            # Add to treatment group fenwick tree
+            trees[active].add(current_score[usubjid], tree_time)
     
     end = timeit.default_timer()
     print(f'Done.')
 
     # Compute Z-score and confidence interval.
+    U_active = favor_active / (n_active * n_placebo)
+    U_placebo = favor_placebo / (n_active * n_placebo)
 
-    # Print results.
-    for i in range(2):
-        print(f'{['Placebo', ' Active'][i]}: {wins[i]} wins, {losses[i]} losses, {ties[i]} ties, {wins[i] + losses[i] + ties[i]} total.')
+    ttw = favor_active / (n*n)
+    ttl = favor_placebo / (n*n)
+    wr = ttw/ttl if ttl > 0 else -inf
+    print(f'Win ratio: {wr}')
 
-    print(f'Total for Active: {wins[1] + losses[0]} wins, {wins[0] + losses[1]} losses, {sum(ties)} ties, {sum(wins) + sum(losses) + sum(ties)} total.')
-    print(f'Time: {end - start} seconds.')      
+    record = (
+        timeline
+        .group_by('USUBJID', 'active').agg(pl.len().alias('num_events'))
+        .join(on = 'USUBJID', how = 'inner', other =
+            pl.DataFrame({
+                'USUBJID': list(subject_data.keys()),
+                'wins': [stat[0] for stat in subject_data.values()],
+                'losses': [stat[1] for stat in subject_data.values()],
+                'net': [stat[0] - stat[1] for stat in subject_data.values()]
+            })
+        )
+        .sort('USUBJID')
+    )
+
+    print(record.filter(pl.col('active').eq(pl.lit(0))))
+
+    # Win ratio agrees with the R package to 10 decimal places, but these are 0 and 430 instead of 215 each... curious.
+    print(sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[1]))
+    print(sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[0]))
+    v = (
+        (sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[1])/n_placebo)**2 * (n_placebo/n)**2 / n
+        + (sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[0])/n_active)**2 * (n_active/n)**2 / n
+    ) / (ttl**2)
+    z = sqrt(n)*log(wr)*wr/sqrt(v)
+    print(f'V: {v}')
+    print(f'Z: {z}')
+
+    print(f'{favor_active} wins, {favor_placebo} losses, {favor_neither} ties.')
+    print(f'Time: {end - start} seconds.')
 
 if __name__ == '__main__':
     main()

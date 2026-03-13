@@ -46,12 +46,19 @@ using_study_data <- function() {
         ),
         fu = "censor",
         data = df
+        ,keep.matrix = TRUE
     )
     end <- Sys.time()
     print("Done.")
-    print(summary(res))
+    print(summary(res, digits = 10))
 
     print(paste0("Time: ", end - start, " seconds."))
+    print(paste0("V: ", res$v))
+    print(paste0("Z: ", res$z))
+
+    mat <- res$wr.matrix
+    print(sum(apply(mat < 0, 1, sum) - apply(mat < 0, 1, sum) * res$wr))
+    print(sum(apply(mat < 0, 2, sum) - apply(mat < 0, 2, sum) * res$wr))
 }
 
 using_test_survival_data <- function() {
