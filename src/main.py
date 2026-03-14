@@ -180,14 +180,32 @@ def win_ratio[T](
         .sort('USUBJID')
     )
 
-    print(record.filter(pl.col('active').eq(pl.lit(0))))
+    trt_record = record.filter(pl.col('active').eq(pl.lit(1)))
+    pla_record = record.filter(pl.col('active').eq(pl.lit(0)))
 
-    # Win ratio agrees with the R package to 10 decimal places, but these are 0 and 430 instead of 215 each... curious.
-    print(sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[1]))
-    print(sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[0]))
+    # Results for WR, V, and Z agree with Duarte&Ferreira R package to >15 decimal places
+    n0 = n_placebo
+    n1 = n_active
     v = (
-        (sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[1])/n_placebo)**2 * (n_placebo/n)**2 / n
-        + (sum(subject_data[id][0] - subject_data[id][1]*wr for id in trt[0])/n_active)**2 * (n_active/n)**2 / n
+        sum(
+            (
+                (
+                    trt_record['wins'] - trt_record['losses'] * wr
+                )
+                / n0
+            ) ** 2
+        )
+        * (n0/n)**2 / n
+        + sum(
+            (
+                (
+                    pla_record['losses'] - pla_record['wins'] * wr
+                )
+                / n1
+            )
+            ** 2
+        )
+        * (n1/n)**2 / n
     ) / (ttl**2)
     z = sqrt(n)*log(wr)*wr/sqrt(v)
     print(f'V: {v}')

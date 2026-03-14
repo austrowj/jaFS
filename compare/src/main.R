@@ -57,8 +57,10 @@ using_study_data <- function() {
     print(paste0("Z: ", res$z))
 
     mat <- res$wr.matrix
-    print(sum(apply(mat < 0, 1, sum) - apply(mat < 0, 1, sum) * res$wr))
-    print(sum(apply(mat < 0, 2, sum) - apply(mat < 0, 2, sum) * res$wr))
+    print(sum(apply(mat > 0, 1, sum) - apply(mat < 0, 1, sum) * res$wr))
+    print(sum(apply(mat > 0, 2, sum) - apply(mat < 0, 2, sum) * res$wr))
+    #print(apply(mat < 0, 2, sum))
+    print(sum(res$loss)/(res$n^2))
 }
 
 using_test_survival_data <- function() {
