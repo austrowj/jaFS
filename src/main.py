@@ -50,6 +50,9 @@ def main():
         .sort('time_to', pl.col('event').eq(pl.lit('censor')))
     )
     df = df.collect()
+    # Duplicate data with new usubjids to test performance with larger datasets
+    df2 = df.with_columns(pl.col('USUBJID') + pl.lit('_dup'))
+    df = pl.concat([df, df2]).sort('time_to', pl.col('event').eq(pl.lit('censor')))
     print(df)
     
     print('Computing win ratio...')

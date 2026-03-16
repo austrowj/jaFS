@@ -27,7 +27,7 @@ using_study_data <- function() {
     )
     
     # Duplicate all rows in df with new usubjids to test performance of winratio with larger datasets
-    #df <- dplyr::bind_rows(df, df |> dplyr::mutate(USUBJID = paste0(USUBJID, "_dup")))
+    df <- dplyr::bind_rows(df, df |> dplyr::mutate(USUBJID = paste0(USUBJID, "_dup")))
     
     print("Loaded and prepared starting data:")
     print(df)
