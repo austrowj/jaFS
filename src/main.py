@@ -161,9 +161,6 @@ def win_ratio[T](
     print(f'Done.')
 
     # Compute Z-score and confidence interval.
-    U_active = favor_active / (n_active * n_placebo)
-    U_placebo = favor_placebo / (n_active * n_placebo)
-
     ttw = favor_active / (n*n)
     ttl = favor_placebo / (n*n)
     wr = ttw/ttl if ttl > 0 else -inf
