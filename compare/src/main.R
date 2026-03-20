@@ -1,5 +1,5 @@
 
-using_study_data <- function() {
+using_study_data <- function(dup_factor = 0, trials = 1) {
     # Load ad_hx from the data root directory specified in the .env file
     dotenv::load_dot_env(file.path(getwd(), ".env"))
     data_root <- Sys.getenv("DATA_ROOT")
@@ -27,40 +27,51 @@ using_study_data <- function() {
     )
     
     # Duplicate all rows in df with new usubjids to test performance of winratio with larger datasets
-    df <- dplyr::bind_rows(df, df |> dplyr::mutate(USUBJID = paste0(USUBJID, "_dup")))
-    
+    if (dup_factor > 0) {
+        dups <- lapply(1:dup_factor, function(i) {
+            df |> dplyr::mutate(USUBJID = paste0(USUBJID, "_dup", i))
+        })
+        df <- dplyr::bind_rows(df, dups)
+    }
+
     print("Loaded and prepared starting data:")
     print(df)
 
-    print("Computing win ratio...")
-    start <- Sys.time()
-    res <- WinRatio::winratio(
-        id = "USUBJID",
-        trt = "trt",
-        active = "Active",
-        outcomes = list(
-            d = c("DEATH", "s", "ttdeath")
-            ,mi = c("MI", "s", "ttmi")
-            #,bmi = c("bmicat", "c", "<")
-            ,stroke = c("STROKE", "s", "ttstroke")
-        ),
-        fu = "censor",
-        data = df
-        ,keep.matrix = TRUE
-    )
-    end <- Sys.time()
-    print("Done.")
-    print(summary(res, digits = 10))
+    times <- c()
+    for (i in 1:trials) {
+        print("Computing win ratio...")
+        start <- Sys.time()
+        res <- WinRatio::winratio(
+            id = "USUBJID",
+            trt = "trt",
+            active = "Active",
+            outcomes = list(
+                d = c("DEATH", "s", "ttdeath")
+                ,mi = c("MI", "s", "ttmi")
+                #,bmi = c("bmicat", "c", "<")
+                ,stroke = c("STROKE", "s", "ttstroke")
+            ),
+            fu = "censor",
+            data = df
+            ,keep.matrix = TRUE
+        )
+        end <- Sys.time()
+        print("Done.")
+        print(summary(res, digits = 10))
 
-    print(paste0("Time: ", end - start, " seconds."))
-    print(paste0("V: ", res$v))
-    print(paste0("Z: ", res$z))
+        print(paste0("Time: ", end - start, " seconds."))
+        print(paste0("V: ", res$v))
+        print(paste0("Z: ", res$z))
 
-    mat <- res$wr.matrix
-    print(sum(apply(mat > 0, 1, sum) - apply(mat < 0, 1, sum) * res$wr))
-    print(sum(apply(mat > 0, 2, sum) - apply(mat < 0, 2, sum) * res$wr))
-    #print(apply(mat < 0, 2, sum))
-    print(sum(res$loss)/(res$n^2))
+        mat <- res$wr.matrix
+        print(sum(apply(mat > 0, 1, sum) - apply(mat < 0, 1, sum) * res$wr))
+        print(sum(apply(mat > 0, 2, sum) - apply(mat < 0, 2, sum) * res$wr))
+        #print(apply(mat < 0, 2, sum))
+        print(sum(res$loss)/(res$n^2))
+
+        times <- c(times, end - start)
+    }
+    return(times)
 }
 
 using_test_survival_data <- function() {
@@ -85,5 +96,21 @@ using_test_survival_data <- function() {
     print(data1)
 }
 
-using_study_data()
+# Organize results into a dataframe (one row per trial) and write to a CSV file
+results <- data.frame()
 
+for (dup_factor in c(5)) {
+    print(paste0("Duplication factor: ", dup_factor))
+    times <- using_study_data(dup_factor = dup_factor, trials = 1)
+    trial_results <- data.frame(
+        dup_factor = dup_factor,
+        trial = seq_along(times),
+        time_seconds = as.numeric(times)
+    )
+    results <- rbind(results, trial_results)
+    print(times)
+}
+
+filename <- paste0("benchmark_results_r_dup5_5.csv")
+write.csv(results, filename, row.names = FALSE)
+print(paste0("Results written to ", filename))

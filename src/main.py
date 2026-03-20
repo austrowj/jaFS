@@ -10,7 +10,7 @@ from polars_readstat import ScanReadstat, scan_readstat
 import env
 from data_structures import FenwickTreeWithSortedLists
 
-def main():
+def main(dup_factor = 0, trials = 1):
     print('Loading data...')
     ad_hx = scan_readstat(env.DATA_ROOT / 'ad_hx.sas7bdat')
     ad_safety = scan_readstat(env.DATA_ROOT / 'ad_safety.sas7bdat')
@@ -51,28 +51,31 @@ def main():
     )
     df = df.collect()
     # Duplicate data with new usubjids to test performance with larger datasets
-    df2 = df.with_columns(pl.col('USUBJID') + pl.lit('_dup'))
-    df = pl.concat([df, df2]).sort('time_to', pl.col('event').eq(pl.lit('censor')))
+    dups = (df.with_columns(pl.col('USUBJID') + pl.lit(f'_dup{i}')) for i in range(dup_factor))
+    df = pl.concat([df] + list(dups)).sort('time_to', pl.col('event').eq(pl.lit('censor')))
     print(df)
     
-    print('Computing win ratio...')
-    win_ratio(
-        df,
-        lambda: (0, 0, 0),
-        {
-            'death':  lambda value, old: (value, old[1], old[2]),
-            'mi':     lambda value, old: (old[0], value, old[2]),
-            'stroke': lambda value, old: (old[0], old[1], value),
-        }
-    )
+    times = []
+    for i in range(trials):
+        print(f'Computing win ratio ({i+1}/{trials})...')
+        times.append(win_ratio(
+            df,
+            lambda: (0, 0, 0),
+            {
+                'death':  lambda value, old: (value, old[1], old[2]),
+                'mi':     lambda value, old: (old[0], value, old[2]),
+                'stroke': lambda value, old: (old[0], old[1], value),
+            }
+        ))
+    return times
 
 T = TypeVar('T')
 def win_ratio[T](
         timeline: pl.DataFrame,
         default_score: Callable[[], T],
         update_score: dict[str, Callable[[Any, T], T]]
-) -> None:
-    """Calculate the win ratio for the given timeline of events."""
+) -> float:
+    """Calculate the win ratio for the given timeline of events. Return time taken."""
     import timeit
 
     start = timeit.default_timer()
@@ -208,11 +211,21 @@ def win_ratio[T](
         * (n1/n)**2 / n
     ) / (ttl**2)
     z = sqrt(n)*log(wr)*wr/sqrt(v)
-    print(f'V: {v}')
-    print(f'Z: {z}')
+    #print(f'V: {v}')
+    #print(f'Z: {z}')
 
-    print(f'{favor_active} wins, {favor_placebo} losses, {favor_neither} ties.')
-    print(f'Time: {end - start} seconds.')
+    #print(f'{favor_active} wins, {favor_placebo} losses, {favor_neither} ties.')
+    #print(f'Time: {end - start} seconds.')
+
+    return end - start
 
 if __name__ == '__main__':
-    main()
+    import csv
+    with open('out/results_py_2.csv', 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['dup_factor', 'trial', 'time'])
+        for dup_factor in [0, 1, 2, 3, 4]:
+            times = main(dup_factor = dup_factor, trials = 10)
+            print(f'Duplication factor: {dup_factor}, times: {times}')
+            for trial, time in enumerate(times):
+                writer.writerow([dup_factor, trial, time])
