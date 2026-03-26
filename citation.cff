@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Austrow"
+  given-names: "James"
+  orcid: "https://orcid.org/0009-0009-8246-8099"
+title: "jaFS"
+version: 0.1.0
+date-released: 2026-03-27
+url: "https://github.com/austrowj/jaFS"
