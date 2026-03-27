@@ -1,3 +1,44 @@
+duerte_ferreira <- function(df) WinRatio::winratio(
+    id = "USUBJID",
+    trt = "trt",
+    active = "Active",
+    outcomes = list(
+        d = c("DEATH", "s", "ttdeath")
+        ,mi = c("MI", "s", "ttmi")
+        #,bmi = c("bmicat", "c", "<")
+        ,stroke = c("STROKE", "s", "ttstroke")
+    ),
+    fu = "censor",
+    data = df
+    ,keep.matrix = TRUE
+)
+
+cui_huang <- function(df) WINS::win.stat(
+    data =
+        df
+        |> dplyr::mutate(id = as.integer(substr(USUBJID, 13, 18)))
+        |> dplyr::select(
+            id,
+            arm = trt,
+            Delta_1 = DEATH,
+            Delta_2 = MI,
+            Delta_3 = STROKE,
+            Y_1 = ttdeath,
+            Y_2 = ttmi,
+            Y_3 = ttstroke
+        )
+    ,
+    ep_type = 'tte',
+    arm.name = c("Active", "Placebo"),
+    tau = 0,
+    np_direction = "larger",
+    priority = c(1:3),
+    alpha = 0.05,
+    digit = 3,
+    stratum.weight = "unstratified",
+    method = "unadjusted",
+    pvalue = "two-sided"
+)
 
 using_study_data <- function(dup_factor = 0, trials = 1) {
     # Load ad_hx from the data root directory specified in the .env file
@@ -39,27 +80,16 @@ using_study_data <- function(dup_factor = 0, trials = 1) {
 
     times <- c()
     for (i in 1:trials) {
+
         print("Computing win ratio...")
         start <- Sys.time()
-        res <- WinRatio::winratio(
-            id = "USUBJID",
-            trt = "trt",
-            active = "Active",
-            outcomes = list(
-                d = c("DEATH", "s", "ttdeath")
-                ,mi = c("MI", "s", "ttmi")
-                #,bmi = c("bmicat", "c", "<")
-                ,stroke = c("STROKE", "s", "ttstroke")
-            ),
-            fu = "censor",
-            data = df
-            ,keep.matrix = TRUE
-        )
+        res <- cui_huang(df)
         end <- Sys.time()
         print("Done.")
+        print(res)
         print(summary(res, digits = 10))
 
-        print(paste0("Time: ", end - start, " seconds."))
+        print(end - start)
         print(paste0("V: ", res$v))
         print(paste0("Z: ", res$z))
 
@@ -74,32 +104,10 @@ using_study_data <- function(dup_factor = 0, trials = 1) {
     return(times)
 }
 
-using_test_survival_data <- function() {
-    library(dplyr)
-    require("survival")
-    # Creation of dataset 'df' with 3 outcomes:
-    # Outcome 1: death (survival event)
-    # Outcome 2: cancer recurrence (repeated survival event)
-    # Outcome 3: size of largest initial tumour (continuous event)
-    data1 <- (
-        survival::bladder1
-        |> mutate(trt = if_else(treatment == "placebo", "Placebo", "Treatment"))
-        |> group_by(id)
-        |> mutate(
-            death = if_else(max(status) %in% c(2, 3), 1, 0),
-            t2death = max(stop)
-        )
-        |> ungroup()
-        |> select(id, trt, death, t2death, number, size)
-        |> unique()
-    )
-    print(data1)
-}
-
 # Organize results into a dataframe (one row per trial) and write to a CSV file
 results <- data.frame()
 
-for (dup_factor in c(5)) {
+for (dup_factor in c(0)) {
     print(paste0("Duplication factor: ", dup_factor))
     times <- using_study_data(dup_factor = dup_factor, trials = 1)
     trial_results <- data.frame(
@@ -111,6 +119,8 @@ for (dup_factor in c(5)) {
     print(times)
 }
 
-filename <- paste0("benchmark_results_r_dup5_5.csv")
-write.csv(results, filename, row.names = FALSE)
-print(paste0("Results written to ", filename))
+if (FALSE) {
+    filename <- paste0("benchmark_results_r_tmp.csv")
+    write.csv(results, filename, row.names = FALSE)
+    print(paste0("Results written to ", filename))
+}
