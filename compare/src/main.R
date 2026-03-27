@@ -1,4 +1,6 @@
-duerte_ferreira <- function(df) WinRatio::winratio(
+library(BuyseTest) # This is required because the package assumes .BuyseTest-options is in the global namespace -_-
+
+duarte_ferreira <- function(df) WinRatio::winratio(
     id = "USUBJID",
     trt = "trt",
     active = "Active",
@@ -38,6 +40,15 @@ cui_huang <- function(df) WINS::win.stat(
     stratum.weight = "unstratified",
     method = "unadjusted",
     pvalue = "two-sided"
+)
+
+ozenne_peron <- function(df) BuyseTest::BuyseTest(
+    data = df,
+    endpoint = c("ttdeath", "ttmi", "ttstroke"),
+    type = c("timeToEvent", "timeToEvent", "timeToEvent"),
+    treatment = "trt",
+    status = c("DEATH", "MI", "STROKE"),
+    threshold = c(1, 1, 1)
 )
 
 using_study_data <- function(dup_factor = 0, trials = 1) {
@@ -83,13 +94,13 @@ using_study_data <- function(dup_factor = 0, trials = 1) {
 
         print("Computing win ratio...")
         start <- Sys.time()
-        res <- cui_huang(df)
+        res <- duarte_ferreira(df)
         end <- Sys.time()
         print("Done.")
+        print(end - start)
         print(res)
         print(summary(res, digits = 10))
 
-        print(end - start)
         print(paste0("V: ", res$v))
         print(paste0("Z: ", res$z))
 
